@@ -1,0 +1,67 @@
+/******************************************************************************
+ * Copyright © 2021, Spectranetix Inc, All Rights Reserved. 
+ * 
+ * File name: usage.c.sample
+ * Library: IPMB Device Driver
+ * 
+ * Author: Nick Winterer
+ * Created: 7/20/21
+ * 
+ * Description: Very minimal example of using IPMB device driver. See
+ *              device_tree.dts.sample for example of adding the IPMB driver
+ *              to an i2c bus.
+ *
+ *              For every ipmb bus enumerated in the device tree, there will be
+ *              a char device named /dev/ipmb-<num> where <num> is the same number
+ *              used by the corresponding i2c device (e.g. /dev/i2c-0, /dev/i2c-1,
+ *              etc.). Unlike the /dev/i2c-<num> devices, /dev/ipmb-<num> supports
+ *              slave writes at the address assigned in the device tree. The other
+ *              difference is that instead of setting the slave address through
+ *              ioctl() calls, the driver will just use the slave address from the
+ *              IPMB header.
+ *
+ *              The user is responsible for parsing the IPMB messages, validating
+ *              checksums, and implementing the required timeout/retry logic.
+ ******************************************************************************/
+/**
+* @file usage.c.sample
+* @brief Sample code for IPMB driver.
+*/
+
+#include <assert.h>
+#include <stdio.h>
+#include <fcntl.h>
+#include <unistd.h>
+
+static const char *IPMB_BUS_PATH = "/dev/ipmb-2";
+static int ipmb_dev_fd;
+
+int main(void) {
+	ipmb_dev_fd = open(IPMB_BUS_PATH, O_RDWR);
+
+	// Send GET DEVICE ID command to IPMC at address 0x45:
+	uint8_t cmd[7];
+	cmd[0] = 0x45 << 1;                                           // Responder's Slave Address
+	cmd[1] = (0x06 << 2) | (0x00);                                // Network function + LUN
+	cmd[2] = ipmb_checksum_compute(&buf[0], 1, SLAVE_ADDRESS);    // Checksum 1
+	cmd[3] = 0x10 << 1;                                           // Requester slave address
+	cmd[4] = 0x01;                                                // Request sequence + LUN
+	cmd[5] = 0x01;                                                // Command
+	cmd[6] = ipmb_checksum_compute(&buf[2], 3, 0x00);             // Checksum 2
+
+	write(ipmb_dev_fd, cmd, 7);
+
+	// Receive GET DEVICE ID response:
+	uint8_t rsp[64];
+	read(ipmb_dev_fd, rsp, 64);
+
+	assert(rsp[1] == (0x06 << 2) | (0x00));                       // Verify NetFn
+	assert(validate_checksums(rsp, 64));                          // Validate checksums
+
+	uint8_t completion_code = rsp[6];
+	uint8_t device_id = rsp[7];
+	uint8_t device_rev = rsp[8];
+
+	printf("Got device ID from IPMC at 0x45. Device ID: %u", device_id);
+	return 0;
+}

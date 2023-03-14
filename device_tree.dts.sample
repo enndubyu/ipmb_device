@@ -1,0 +1,14 @@
+#include <dt-bindings/i2c/i2c.h>
+
+&i2c2 {
+    ipmb-device@1010 {
+        compatible = "ipmb-device";
+
+        #address-cells = <1>;
+        #size-cells = <0>;
+
+        /* use slave address space for i2c client */
+        reg = <(I2C_OWN_SLAVE_ADDRESS | 0x10)>;
+    };
+};
+

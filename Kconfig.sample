@@ -1,0 +1,6 @@
+config IPMB_DEVICE
+    tristate "IPMB bus driver"
+    depends on I2C_SLAVE && !IPMB_DEVICE_INTERFACE
+    default m
+    help
+        This enables the IPMB bus driver. 
