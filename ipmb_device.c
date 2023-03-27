@@ -48,11 +48,11 @@
 
 /* i2c_driver.remove return type changed from int to void in version 6.1.0 */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
-#define REMOVE_RET_TYPE void
-#define REMOVE_RET_VAL
+	#define REMOVE_RET_TYPE void
+	#define REMOVE_RET_VAL
 #else
-#define REMOVE_RET_TYPE int
-#define REMOVE_RET_VAL 0
+	#define REMOVE_RET_TYPE int
+	#define REMOVE_RET_VAL 0
 #endif
 
 struct ipmb_msg {
