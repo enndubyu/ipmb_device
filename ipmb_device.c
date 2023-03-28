@@ -46,7 +46,11 @@
 
 #define GET_IPMB_MESSAGE_BODY(msg) (((const char *)(msg)) + 1)
 
-/* i2c_driver.remove return type changed from int to void in version 6.1.0 */
+/*
+ * i2c_driver.remove signature changed in version 6.1.0:
+ *   old: int (*remove)(struct i2c_client)
+ *   new: void (*remove)(struct i2c_client)
+ */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
 	#define REMOVE_RET_TYPE void
 	#define REMOVE_RET_VAL
@@ -54,6 +58,24 @@
 	#define REMOVE_RET_TYPE int
 	#define REMOVE_RET_VAL 0
 #endif
+
+/*
+ * i2c_driver.probe signature changed in 6.3.0rc3
+ *   old: int (*probe)(struct i2c_client, const struct i2c_device_id*)
+ *   new: int (*probe)(struct i2c_client)
+ *
+ * TODO: Maintain separate branches for different branches for different kernel
+ *       API versions instead of abusing the preprocessor. We can't even detect
+ *       which release candidate with a kernel macro so the fact that this hack
+ *       will break builds for v6.3.0rc1 and v6.3.0rc2 is all the more reason to
+ *       get rid of it.
+ */
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0))
+	#define PROBE_PARAM_PACK struct i2c_client *client
+#else
+	#define PROBE_PARAM_PACK struct i2c_client *client, const struct i2c_device_id *id
+#endif
+
 
 struct ipmb_msg {
 	u8 payload_len;
@@ -299,7 +321,8 @@ static int ipmb_device_slave_cb(struct i2c_client *client,
 
 		buf[++ipmb_dev->msg_idx] = *val;
 
-		/* Validate checksum immediately after receipt if validation is
+		/*
+		 * Validate checksum immediately after receipt if validation is
 		 * enabled. Bus driver will attempt to NACK the transaction in
 		 * order to free up the bus immediately.
 		 */
@@ -310,7 +333,8 @@ static int ipmb_device_slave_cb(struct i2c_client *client,
 					  ipmb_dev->msg.checksum)) {
 			ret = -EINVAL;
 
-			/* SIZE_MAX is used to flag invalid messages so we
+			/*
+			 * SIZE_MAX is used to flag invalid messages so we
 			 * know not to add them to the read queue when we
 			 * receive the stop signal.
 			 */
@@ -335,8 +359,7 @@ static int ipmb_device_slave_cb(struct i2c_client *client,
 	return ret;
 }
 
-static int ipmb_device_probe(struct i2c_client *client,
-			     const struct i2c_device_id *id)
+static int ipmb_device_probe(PROBE_PARAM_PACK)
 {
 	struct ipmb_device *ipmb_dev;
 	int ret;

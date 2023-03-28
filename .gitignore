@@ -9,6 +9,7 @@
 *.ko
 *.so
 *.so.dbg
+*.dwo
 *.mod
 *.mod.c
 *.i
