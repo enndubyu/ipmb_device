@@ -1,4 +1,4 @@
-<center>Intelligent Platform Management Bus (IPMB) Device Driver</center>
+Intelligent Platform Management Bus (IPMB) Device Driver
 ----------
 
 This is a linux driver for sending IPMI messages (requests and responses) over the IPMB bus.
