@@ -1,0 +1,4 @@
+# Add attributes to override github-linguist's language detection for sample files:
+*.c.sample linguist-language=C
+*.bb.sample linguist-language=BitBake
+
