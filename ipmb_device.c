@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
 /******************************************************************************
- * Copyright © 2021, Spectranetix Inc, All Rights Reserved.
+ * Copyright © 2023, Spectranetix Inc, All Rights Reserved.
  *
  * File name: ipmb_device.c
  * Library: Linux IPMB Driver
@@ -46,11 +46,28 @@
 
 #define GET_IPMB_MESSAGE_BODY(msg) (((const char *)(msg)) + 1)
 
+
 /*
- * i2c_driver.remove signature changed in version 6.1.0:
- *   old: int (*remove)(struct i2c_client)
- *   new: void (*remove)(struct i2c_client)
+ * There are several kernel API changes that we need to account for in order to
+ * support the full range of kernel versions since I2C slave support was added
+ * in kernel v4.0:
+ *  - **v4.16.0:** __poll_t was introduced
+ *  - **v6.1.0:** i2c_driver.remove signature changed
+ *    - old: int (*remove)(struct i2c_client)
+ *    - new: void (*remove)(struct i2c_client)
+ *  - **v6.3.1:** i2c_driver.probe signature changed
+ *    - old: int (*probe)(struct i2c_client, const struct i2c_device_id*)
+ *    - new: int (*probe)(struct i2c_client)
+ *
+ * TODO: Instead of abusing the preprocessor for this, maintain master to be
+ *       compatible with the latest kernel release and add branches for the
+ *       kernel versions prior to each API change.
  */
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 16, 0))
+	typedef __bitwise unsigned __poll_t;
+#endif
+
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0))
 	#define REMOVE_RET_TYPE void
 	#define REMOVE_RET_VAL
@@ -59,17 +76,6 @@
 	#define REMOVE_RET_VAL 0
 #endif
 
-/*
- * i2c_driver.probe signature changed in 6.3.0rc3
- *   old: int (*probe)(struct i2c_client, const struct i2c_device_id*)
- *   new: int (*probe)(struct i2c_client)
- *
- * TODO: Maintain separate branches for different branches for different kernel
- *       API versions instead of abusing the preprocessor. We can't even detect
- *       which release candidate with a kernel macro so the fact that this hack
- *       will break builds for v6.3.0rc1 and v6.3.0rc2 is all the more reason to
- *       get rid of it.
- */
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0))
 	#define PROBE_PARAM_PACK struct i2c_client *client
 #else
@@ -203,13 +209,13 @@ static ssize_t ipmb_write(struct file *file, const char __user *buf,
 static __poll_t ipmb_poll(struct file *file, poll_table *wait)
 {
 	struct ipmb_device *ipmb_dev = to_ipmb_dev(file);
-	__poll_t mask = EPOLLOUT;
+	__poll_t mask = POLLOUT;
 
 	mutex_lock(&ipmb_dev->file_mutex);
 	poll_wait(file, &ipmb_dev->wait_queue, wait);
 
 	if (atomic_read(&ipmb_dev->msg_queue_len))
-		mask |= EPOLLIN;
+		mask |= POLLIN;
 	mutex_unlock(&ipmb_dev->file_mutex);
 
 	return mask;
@@ -297,20 +303,15 @@ static int ipmb_device_slave_cb(struct i2c_client *client,
 		ipmb_dev->msg_idx = 0;
 
 		/*
-		 * At index 0, ipmb_msg stores the length of msg,
-		 * skip it for now.
-		 * The payload_len will be populated once the whole
-		 * buf is populated.
+		 * We need to leave space at index 0 to fill in the length
+		 * after we have received the full message.
 		 *
-		 * The I2C bus driver's responsibility is to pass the
-		 * data bytes to the backend driver; it does not
-		 * forward the i2c slave address.
-		 * Since the first byte in the IPMB msg is the
-		 * address of the responder, it is the responsibility
-		 * of the IPMB driver to format the msg properly.
-		 * So this driver prepends the address of the responder
-		 * to the received i2c data before the msg msg
-		 * is handled in userland.
+		 * The I2C bus driver doesn't include the i2c slave address in
+		 * the data it passes to the i2c slave callback function, but the
+		 * IPMB spec considers it to be part of the message header and it's
+		 * included in the checksum calculation. We can add the address
+		 * to the message here and then append bytes to the message as
+		 * they are received.
 		 */
 		buf[++ipmb_dev->msg_idx] = GET_8BIT_ADDR(client->addr);
 		break;
@@ -334,9 +335,9 @@ static int ipmb_device_slave_cb(struct i2c_client *client,
 			ret = -EINVAL;
 
 			/*
-			 * SIZE_MAX is used to flag invalid messages so we
-			 * know not to add them to the read queue when we
-			 * receive the stop signal.
+			 * SIZE_MAX is used to flag the current message as invalid
+			 * so that when we receive the stop signal, we will know
+			 * not to copy it into the read queue.
 			 */
 			ipmb_dev->msg_idx = SIZE_MAX;
 		}
