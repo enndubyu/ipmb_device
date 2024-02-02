@@ -30,7 +30,8 @@ both sides of the IPMI transaction (requester and responder).
   * Kconfig
     * enable `CONFIG_I2C_SLAVE`
     * disable `CONFIG_IPMB_DEVICE_INTERFACE`
-
+  * I2C bus driver must support multimaster operation.
+  
 ### Usage
 
  1. Add nodes to the device tree for each IPMB bus and specify
@@ -44,7 +45,7 @@ both sides of the IPMI transaction (requester and responder).
     [boost.asio](https://www.boost.org/doc/libs/1_76_0/doc/html/boost_asio.html), or
     [libevent](https://libevent.org/) to receive messages asynchronously.
 
-*(See the `usage.c.sample` for a simple example of using this driver to send 
+*(See the `usage.c.sample` for a simple example of using this driver to send
 an IPMB msg)*
 
 This is a relatively bare-bones implementation that doesn't make many assumptions
