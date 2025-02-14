@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 
 /******************************************************************************
- * Copyright © 2023, Spectranetix Inc, All Rights Reserved.
+ * Copyright © 2025, Spectranetix Inc, All Rights Reserved.
  *
  * File name: ipmb_device.c
  * Library: Linux IPMB Driver
@@ -12,7 +12,7 @@
  * Description: IPMB driver that acts as a low-level interface to the i2c bus,
  *              allowing clients to send both requests and responses. This is
  *              based on the ipmb_dev_int driver, with modifications to support
- *              both sides of the IPMB transaction.
+ *              both sides of the IPMI transaction.
  ******************************************************************************/
 
 #include <linux/init.h>
@@ -99,13 +99,13 @@ struct ipmb_request_elem {
 struct ipmb_device {
 	struct i2c_client *client;
 	struct miscdevice miscdev;
-	struct ipmb_msg msg;
 	struct list_head msg_queue;
 	atomic_t msg_queue_len;
-	size_t msg_idx;
 	spinlock_t lock;
 	wait_queue_head_t wait_queue;
 	struct mutex file_mutex;
+	struct ipmb_msg msg;
+	size_t msg_idx;
 	bool ignore_nack;
 	bool verify_checksum;
 };
@@ -281,13 +281,7 @@ static void ipmb_handle_request(struct ipmb_device *ipmb_dev)
 	wake_up_all(&ipmb_dev->wait_queue);
 }
 
-/*
- * The IPMB protocol only supports I2C Writes so there is no need
- * to support I2C_SLAVE_READ* events.
- * This i2c callback function only monitors IPMB msg messages
- * and adds them in a queue, so that they can be handled by
- * receive_ipmb_request.
- */
+/* Buffers message data and adds it to read queue after the transaction is complete. */
 static int ipmb_device_slave_cb(struct i2c_client *client,
 				enum i2c_slave_event event, u8 *val)
 {
@@ -306,12 +300,9 @@ static int ipmb_device_slave_cb(struct i2c_client *client,
 		 * We need to leave space at index 0 to fill in the length
 		 * after we have received the full message.
 		 *
-		 * The I2C bus driver doesn't include the i2c slave address in
-		 * the data it passes to the i2c slave callback function, but the
-		 * IPMB spec considers it to be part of the message header and it's
-		 * included in the checksum calculation. We can add the address
-		 * to the message here and then append bytes to the message as
-		 * they are received.
+		 * We also write the slave address to the buffer here since it
+		 * is not included in the message data passed to us by the bus
+		 * driver.
 		 */
 		buf[++ipmb_dev->msg_idx] = GET_8BIT_ADDR(client->addr);
 		break;
@@ -323,15 +314,16 @@ static int ipmb_device_slave_cb(struct i2c_client *client,
 		buf[++ipmb_dev->msg_idx] = *val;
 
 		/*
-		 * Validate checksum immediately after receipt if validation is
-		 * enabled. Bus driver will attempt to NACK the transaction in
-		 * order to free up the bus immediately.
+		 * Validate checksum immediately after receipt (if enabled), so
+		 * that we can attempt to free up the bus for other transactions.
 		 */
 		if (ipmb_dev->msg_idx == IPMB_HEADER_LENGTH &&
 		    ipmb_dev->verify_checksum &&
 		    !ipmb_checksum_verify(ipmb_dev->msg.sa,
 					  ipmb_dev->msg.netfn_lun,
 					  ipmb_dev->msg.checksum)) {
+
+			/* Let the bus driver know to NACK the byte */
 			ret = -EINVAL;
 
 			/*
@@ -352,6 +344,14 @@ static int ipmb_device_slave_cb(struct i2c_client *client,
 
 		break;
 
+	/* IPMB protocol only supports master writes */
+	case I2C_SLAVE_READ_REQUESTED:
+		dev_warn(ipmb_dev->miscdev.this_device,
+			 "Received invalid master read request on IPMB\n");
+
+		break;
+
+	case I2C_SLAVE_READ_PROCESSED:
 	default:
 		break;
 	}
@@ -377,6 +377,7 @@ static int ipmb_device_probe(PROBE_PARAM_PACK)
 	mutex_init(&ipmb_dev->file_mutex);
 
 	ipmb_dev->ignore_nack = false;
+	ipmb_dev->verify_checksum = false;
 
 	ipmb_dev->miscdev.minor = MISC_DYNAMIC_MINOR;
 

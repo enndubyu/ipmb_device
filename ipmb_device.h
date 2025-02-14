@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0+ WITH Linux-syscall-note */
 
 /******************************************************************************
- * Copyright © 2021, Spectranetix Inc, All Rights Reserved. 
+ * Copyright © 2025, Spectranetix Inc, All Rights Reserved.
  * 
  * File name: ipmb_device.h
  * Library: Linux IPMB Driver
@@ -13,25 +13,31 @@
  *              ioctl() commands for enabling and disabling driver features.
  *
  * Commands:
- *   IPMB_IOC_EN_IGNORE_NACK: Enables IGNORE_NACK mode (if supported by i2c backend).
- *                            When enabled, driver will send entire buffer even
- *                            if the slave fails to ACK a byte. On failure, errno
- *                            will be set with one of the following:
+ *   IPMB_IOC_EN_IGNORE_NACK: Enables IGNORE_NACK mode (if supported by i2c bus
+ *                            driver). When enabled, driver will send entire buffer
+ *                            even if the slave fails to ACK a byte. On failure,
+ *                            errno will be set with one of the following:
  *           EOPNOTSUPP - Backend driver doesn't support I2C protocol mangling
  *
  *   IPMB_IOC_DIS_IGNORE_NACK: Disables IGNORE_NACK mode. Driver will stop transaction
  *                             and write STOP condition to the i2c bus if the slave
  *                             fails to ACK a byte. Default.
  *
- *   IPMB_IOC_ENABLE_CHECKSUM: Enables checksum verification. Driver will attempt
- *                             to NACK IPMB messages with an invalid connection
- *                             header checksum. The user is still responsible for
- *                             verifying the second IPMI checksum.
+ *   IPMB_IOC_ENABLE_CHECKSUM: Enables verification of the IPMB header checksum
+ *                             for incoming messages. When enabled, the driver
+ *                             will attempt to NACK an invalid header checksum
+ *                             immediately to free up the bus for other transactions.
+ *                             Invalid messages won't be added to the read queue.
  *
  *   IPMB_IOC_DISABLE_CHECKSUM: Disables checksum verification. All i2c messages
  *                              will be received even when they are not valid IPMB
- *                              messages. This allows IPMB devices to detect and
+ *                              messages. This allows user space code to detect and
  *                              handle checksum errors manually. Default.
+ *
+ *                              Note: The checksum byte in outgoing messages is
+ *                                    always validated regardless of this setting
+ *                                    and write() will return EINVAL if the validation
+ *                                    fails.
  *
  * Usage:
  *     #include <linux/ipmb_device.h>

@@ -50,7 +50,7 @@ an IPMB msg)*
 
 This is a relatively bare-bones implementation that doesn't make many assumptions
 about the structure of the underlying IPMI messages. Apart from extracting the destination
-address from the message header and optionally validating the header checksum (see
+address from the IPMB header and optionally validating the IPMB header checksum (see
 [ioctl interface](ipmb_device.h)), this driver simply exposes the raw i2c bus to
 userspace. The user is responsible for (de)serialization, validation, timeouts and
 retry logic, etc.
